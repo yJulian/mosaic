@@ -13,6 +13,17 @@ Originally sized against the Tang Nano 9K's 26 x 18Kbit BSRAM budget
 now targets the Tang Nano 20K, which has a much larger BSRAM budget,
 so this sizing carries a comfortable margin rather than being tight.
 
+```mermaid
+flowchart TB
+    WBUF["Weight buffer<br/>0x0000, 16 KB<br/>(36 B used: 6x6 int8)"]
+    ABUF["Activation buffer<br/>0x4000, 16 KB<br/>(36 B used: 6x6 int8)"]
+    RBUF["Result buffer<br/>0x8000, 6 KB<br/>(144 B used: 6x6 int32)"]
+    DBUF["Debug/status<br/>0x9800, 1 KB<br/>(reserved)"]
+    RSVD["Reserved<br/>0x9C00+<br/>(future tiling headroom)"]
+
+    WBUF --> ABUF --> RBUF --> DBUF --> RSVD
+```
+
 | Region | Base (byte addr) | Size | v1 payload |
 |---|---|---|---|
 | Weight buffer | `0x0000` | 16 KB | 36 B (6x6 int8, row-major) at offset 0 |

@@ -11,11 +11,33 @@ for synthesis and simulation, with Gowin's free EDA tool bridging the
 one remaining gap (place&route for this specific device -- see
 [Status](#status) below).
 
+```mermaid
+flowchart LR
+    CLI["Python host<br/>fpga-systolic CLI"]
+
+    subgraph FPGA["Tang Nano 20K"]
+        direction LR
+        RX[uart_rx] --> RXF[("rx_fifo")] --> CMD[cmd_processor]
+        CMD --> TXF[("tx_fifo")] --> TX[uart_tx]
+
+        CMD <--> AC[array_ctrl]
+        AC --> WL[ws_weight_loader]
+        AC --> SF[skew_feeder]
+        WL --> ARR
+        SF --> ARR
+        ARR["systolic_array<br/>6x6 PEs"] --> RD[result_drainer]
+        RD --> AC
+
+        CMD <-->|host port| SPAD[("scratchpad<br/>BSRAM")]
+        AC <-->|stage / writeback port| SPAD
+    end
+
+    CLI -->|UART TX| RX
+    TX -->|UART RX| CLI
 ```
-Host (Python) --UART--> cmd_processor --> array_ctrl --> systolic_array (6x6 PEs)
-                              ^                                   |
-                              +------ scratchpad (BSRAM) <--------+
-```
+
+*(See [`docs/architecture.md`](docs/architecture.md) for the full
+dataflow explanation and an FSM/PE-interconnect diagram.)*
 
 ## Status
 

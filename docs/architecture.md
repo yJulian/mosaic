@@ -7,30 +7,59 @@ switchable between two GEMM dataflows (weight-stationary and
 output-stationary), fed from an on-chip BSRAM scratchpad, controlled
 over a framed UART protocol from a Python host.
 
+```mermaid
+flowchart TB
+    H["Host (Python)"] -->|UART| RX[uart_rx] --> RXF[("rx_fifo")] --> CMD[cmd_processor]
+
+    CMD <-->|"start/busy/done"| AC["array_ctrl<br/>(mode, os_clear, load_counter,<br/>phase_cycle)"]
+    AC --> WL[ws_weight_loader]
+    AC --> SF[skew_feeder]
+    WL --> ARR
+    SF --> ARR
+    ARR["systolic_array<br/>6x6 PEs"] --> RD[result_drainer]
+    RD -->|"writeback"| AC
+
+    CMD <-->|"host port<br/>(idle only)"| SPAD[("scratchpad BSRAM")]
+    AC <-->|"stage/writeback port<br/>(busy only)"| SPAD
+
+    CMD --> TXF[("tx_fifo")] --> TX[uart_tx] -->|UART| H
 ```
-Host (Python) --UART--> uart_rx --> rx_fifo --> cmd_processor
-                                                      |
-                            +-------------------------+-------------------------+
-                            |                         |                         |
-                       array_ctrl <----phase_cycle----+                         |
-                            |  (mode/os_clear/load_counter)                     |
-                            v                                                   |
-                     systolic_array (6x6 PEs) <---- ws_weight_loader            |
-                            |                  <---- skew_feeder                |
-                            v                                                   |
-                     result_drainer                                            |
-                            |                                                  |
-                            v                                                  v
-                       scratchpad (BSRAM, port-muxed: array_ctrl <-> host) <----+
-                            |
-                            v
-              cmd_processor --> tx_fifo --> uart_tx --UART--> Host
-```
+
+Port access to the scratchpad is time-muxed in `top.vhd`: the host
+(`cmd_processor`) owns it while the array is idle, `array_ctrl`'s
+stage/writeback datapath owns it while busy -- the two are never
+active at the same time (`cmd_processor` NACKs host writes/reads with
+`ERR_BUSY` while a compute is running).
 
 ## Dataflow modes
 
 Both modes compute `C = A @ W` for 6x6 int8 matrices `A` (activations)
 and `W` (weights), accumulating in int32, no saturation.
+
+The PE grid only has neighbor-to-neighbor links: activations flow
+west->east, weights/partial-sums flow north->south. A 3x3 excerpt of
+the full 6x6 interconnect (the pattern repeats identically for all 36
+PEs):
+
+```mermaid
+flowchart TB
+    AW0(("act in<br/>row 0")) --> P00["PE(0,0)"] --> P01["PE(0,1)"] --> P02["PE(0,2)"] --> AE0(("act out"))
+    AW1(("act in<br/>row 1")) --> P10["PE(1,0)"] --> P11["PE(1,1)"] --> P12["PE(1,2)"] --> AE1(("act out"))
+    AW2(("act in<br/>row 2")) --> P20["PE(2,0)"] --> P21["PE(2,1)"] --> P22["PE(2,2)"] --> AE2(("act out"))
+
+    WN0(("wgt/psum in<br/>col 0")) --> P00
+    WN1(("wgt/psum in<br/>col 1")) --> P01
+    WN2(("wgt/psum in<br/>col 2")) --> P02
+
+    P00 --> P10 --> P20 --> WS0(("wgt/psum out"))
+    P01 --> P11 --> P21 --> WS1(("wgt/psum out"))
+    P02 --> P12 --> P22 --> WS2(("wgt/psum out"))
+```
+
+In `PE_LOAD_WEIGHT`/`PE_COMPUTE_OS` the vertical links carry weights;
+in `PE_COMPUTE_WS`/`PE_DRAIN_OS` they carry partial sums/accumulator
+values -- same wires, different meaning depending on `mode` (see
+`rtl/pe/pe.vhd`).
 
 ### Weight-stationary (WS)
 
@@ -75,6 +104,29 @@ and `W` (weights), accumulating in int32, no saturation.
   6-deep shift register. One combinational read (row `ROWS-1`) plus
   `ROWS-1` shift edges reads out all 6 rows, bottom-to-top, in exactly
   `ARRAY_ROWS` cycles, all 6 columns in parallel.
+
+### Array controller FSM
+
+```mermaid
+stateDiagram-v2
+    [*] --> RESET
+    RESET --> IDLE
+    IDLE --> STAGE_W: start_compute_ws/os
+    STAGE_W --> STAGE_A: 36 bytes staged
+    STAGE_A --> LOAD: mode = WS
+    STAGE_A --> COMPUTE_OS: mode = OS
+    LOAD --> COMPUTE_WS: weights captured
+    COMPUTE_WS --> WRITEBACK
+    COMPUTE_OS --> DRAIN_OS: propagation margin elapsed
+    DRAIN_OS --> WRITEBACK: 6 rows drained
+    WRITEBACK --> IDLE: 144 bytes written, done=1
+```
+
+`STAGE_W`/`STAGE_A` and `WRITEBACK` are shared by both dataflows (see
+"Staging / writeback" below); `LOAD`/`COMPUTE_WS` and
+`COMPUTE_OS`/`DRAIN_OS` are mode-specific. `busy` is asserted for every
+state except `IDLE`/`RESET`; `done` latches high in `WRITEBACK`'s last
+cycle and clears again on the next `start_compute_*`.
 
 ### Staging / writeback
 

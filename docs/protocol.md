@@ -84,11 +84,48 @@ int8 x int8 -> int32, no saturation. Matrices are 6x6, row-major.
 
 ## Typical session
 
+```mermaid
+sequenceDiagram
+    participant H as Host (Python)
+    participant D as Device (FPGA)
+
+    H->>D: PING
+    D-->>H: PONG (fw_version, rows, cols, dtype)
+
+    H->>D: WRITE_WEIGHTS (offset=0, 36B)
+    D-->>H: ACK
+    H->>D: WRITE_ACTIVATIONS (offset=0, 36B)
+    D-->>H: ACK
+
+    H->>D: START_COMPUTE (mode=WS)
+    D-->>H: ACK
+
+    loop poll until done
+        H->>D: STATUS_QUERY
+        D-->>H: STATUS_DATA (busy, done)
+    end
+
+    H->>D: READ_RESULT (offset=0, len=144)
+    D-->>H: RESULT_DATA (144 bytes)
 ```
-PING                          -> PONG (sanity check)
-WRITE_WEIGHTS offset=0 [36B]  -> ACK
-WRITE_ACTIVATIONS offset=0 [36B] -> ACK
-START_COMPUTE mode=WS         -> ACK
-STATUS_QUERY (poll)           -> STATUS_DATA{busy=1} ... {busy=0}
-READ_RESULT offset=0 len=144  -> RESULT_DATA [144B]
+
+### Busy rejection
+
+`WRITE_*`/`START_COMPUTE`/`READ_RESULT` sent while a compute is already
+running are NACKed instead of queued or blocked:
+
+```mermaid
+sequenceDiagram
+    participant H as Host (Python)
+    participant D as Device (FPGA)
+
+    H->>D: START_COMPUTE (mode=OS)
+    D-->>H: ACK
+    Note over D: busy = 1
+
+    H->>D: WRITE_WEIGHTS (...)
+    D-->>H: NACK (ERR_BUSY)
+
+    H->>D: DEBUG_READ_PE (row, col)
+    D-->>H: DEBUG_DATA (allowed even while busy)
 ```
