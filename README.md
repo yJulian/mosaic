@@ -2,6 +2,8 @@
 
 **M**atrix **O**perations, **S**ystolic **A**rray, **I**nterchangeable **C**ompute
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A 6x6 int8x8->int32 systolic array accelerator for the Sipeed Tang Nano
 20K, switchable between weight-stationary and output-stationary GEMM
 dataflows, controlled over a framed UART protocol from a Python host.

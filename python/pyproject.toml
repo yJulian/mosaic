@@ -2,6 +2,7 @@
 name = "fpga-systolic"
 version = "0.1.0"
 description = "Host driver/CLI for the 6x6 systolic array FPGA accelerator"
+license = "MIT"
 requires-python = ">=3.9"
 dependencies = [
     "pyserial>=3.5",
