@@ -1,0 +1,23 @@
+[project]
+name = "fpga-systolic"
+version = "0.1.0"
+description = "Host driver/CLI for the 6x6 systolic array FPGA accelerator"
+requires-python = ">=3.9"
+dependencies = [
+    "pyserial>=3.5",
+    "numpy>=1.24",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+fpga-systolic = "fpga_systolic.cli:entrypoint"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["fpga_systolic*"]

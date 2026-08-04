@@ -1,0 +1,11 @@
+build/
+*.ghw
+*.vcd
+*.o
+work-obj*.cf
+*.fs
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.venv/
