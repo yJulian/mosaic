@@ -52,12 +52,18 @@ architecture rtl of top is
   signal host_w_en   : std_logic;
   signal host_r_addr : unsigned(ADDR_WIDTH - 1 downto 0);
   signal host_r_data : std_logic_vector(7 downto 0);
+  signal host_r_en   : std_logic;
 
   -- cmd_processor <-> array_ctrl
   signal start_compute_ws, start_compute_os : std_logic;
   signal array_busy, array_done             : std_logic;
   signal soft_reset                          : std_logic;
   signal array_rst                           : std_logic;
+  signal k_len_raw                           : unsigned(15 downto 0);
+
+  -- array_ctrl <-> ws_weight_loader / skew_feeder (OS-mode native K)
+  signal k_len_val      : natural range 1 to OS_K_MAX;
+  signal staging_for_ws : std_logic;
 
   -- cmd_processor <-> systolic_array (debug)
   signal dbg_row    : natural range 0 to ARRAY_ROWS - 1;
@@ -69,15 +75,15 @@ architecture rtl of top is
   signal mode         : pe_mode_t;
   signal os_clear     : std_logic;
   signal load_counter : natural range 0 to 2 * ARRAY_ROWS;
-  signal phase_cycle  : natural range 0 to 31;
+  signal phase_cycle  : phase_cycle_t;
 
   -- array_ctrl <-> scratchpad (stage/writeback side)
   signal stage_addr : unsigned(ADDR_WIDTH - 1 downto 0);
   signal stage_data  : std_logic_vector(7 downto 0);
   signal stage_w_wen : std_logic;
-  signal stage_w_idx : natural range 0 to WEIGHT_BYTES - 1;
+  signal stage_w_idx : natural range 0 to OS_K_MAX * ARRAY_COLS - 1;
   signal stage_a_wen : std_logic;
-  signal stage_a_idx : natural range 0 to ACT_BYTES - 1;
+  signal stage_a_idx : natural range 0 to ARRAY_ROWS * OS_K_MAX - 1;
   signal wb_addr      : unsigned(ADDR_WIDTH - 1 downto 0);
   signal wb_idx        : natural range 0 to RESULT_BYTES - 1;
   signal wb_wen         : std_logic;
@@ -100,6 +106,14 @@ architecture rtl of top is
 
   -- simple bring-up heartbeat
   signal heartbeat_ctr : unsigned(23 downto 0) := (others => '0');
+
+  -- debug LEDs: host_w_en/host_r_en/array_busy are all far too brief
+  -- (single cycles, or a handful of microseconds for a whole compute) to
+  -- see by eye at 27MHz, so each gets stretched to a fixed human-visible
+  -- pulse before driving an LED.
+  signal led_busy_stretched  : std_logic;
+  signal led_write_stretched : std_logic;
+  signal led_read_stretched  : std_logic;
 begin
 
   ------------------------------------------------------------------
@@ -193,8 +207,9 @@ begin
       rx_rd_en => rxf_rd_en, rx_rd_data => rxf_rd_data, rx_empty => rxf_empty,
       tx_wr_en => txf_wr_en, tx_wr_data => txf_wr_data, tx_full => txf_full,
       host_w_addr => host_w_addr, host_w_data => host_w_data, host_w_en => host_w_en,
-      host_r_addr => host_r_addr, host_r_data => host_r_data,
+      host_r_addr => host_r_addr, host_r_data => host_r_data, host_r_en => host_r_en,
       start_compute_ws => start_compute_ws, start_compute_os => start_compute_os,
+      k_len_raw => k_len_raw,
       array_busy => array_busy, array_done => array_done, soft_reset => soft_reset,
       dbg_row => dbg_row, dbg_col => dbg_col, dbg_weight => dbg_weight, dbg_accum => dbg_accum
     );
@@ -208,6 +223,8 @@ begin
       start_compute_ws => start_compute_ws, start_compute_os => start_compute_os,
       busy => array_busy, done => array_done,
       mode => mode, os_clear => os_clear, load_counter => load_counter, phase_cycle => phase_cycle,
+      k_len_raw => k_len_raw, k_len => k_len_val, staging_for_ws => staging_for_ws,
+      dbg_phase_counter => open, dbg_os_m_ctr => open, dbg_os_k_ctr => open, dbg_staging_a_os => open,
       stage_addr => stage_addr, stage_data => stage_data,
       stage_w_wen => stage_w_wen, stage_w_idx => stage_w_idx,
       stage_a_wen => stage_a_wen, stage_a_idx => stage_a_idx,
@@ -228,7 +245,7 @@ begin
     port map (
       clk => clk,
       stage_wen => stage_w_wen, stage_idx => stage_w_idx, stage_data => stage_data,
-      mode => mode, phase_cycle => phase_cycle,
+      mode => mode, phase_cycle => phase_cycle, k_len => k_len_val,
       wgt_north => wgt_north
     );
 
@@ -236,7 +253,8 @@ begin
     port map (
       clk => clk,
       stage_wen => stage_a_wen, stage_idx => stage_a_idx, stage_data => stage_data,
-      mode => mode, phase_cycle => phase_cycle,
+      staging_for_ws => staging_for_ws,
+      mode => mode, phase_cycle => phase_cycle, k_len => k_len_val,
       act_west => act_west
     );
 
@@ -278,11 +296,22 @@ begin
     end if;
   end process;
 
+  busy_stretch : entity work.pulse_stretch
+    port map (clk => clk, rst => rst, trigger => array_busy, stretched => led_busy_stretched);
+
+  write_stretch : entity work.pulse_stretch
+    port map (clk => clk, rst => rst, trigger => host_w_en, stretched => led_write_stretched);
+
+  read_stretch : entity work.pulse_stretch
+    port map (clk => clk, rst => rst, trigger => host_r_en, stretched => led_read_stretched);
+
   led_n <= not (
     heartbeat_ctr(23) &   -- led0: ~1.6Hz heartbeat, proves the FPGA is alive
-    array_busy &          -- led1: compute in progress
-    array_done &          -- led2: result ready
-    "000"                 -- led3..5: reserved
+    array_busy &          -- led1: compute in progress (raw, unstretched)
+    array_done &          -- led2: result ready (latches until next start)
+    led_busy_stretched &  -- led3: systolic array in use (stretched for visibility)
+    led_write_stretched & -- led4: scratchpad write in progress (stretched)
+    led_read_stretched    -- led5: scratchpad read in progress (stretched)
   );
 
 end architecture rtl;

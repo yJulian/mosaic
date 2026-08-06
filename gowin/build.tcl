@@ -36,6 +36,7 @@ foreach f {
   rtl/uart/uart_tx.vhd
   rtl/uart/sync_fifo.vhd
   rtl/ctrl/cmd_processor.vhd
+  rtl/common/pulse_stretch.vhd
   rtl/top/clk_reset_gen.vhd
   rtl/top/top.vhd
 } {

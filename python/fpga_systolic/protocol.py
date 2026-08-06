@@ -55,6 +55,7 @@ ERR_BAD_LEN = 0x03
 ERR_BUSY = 0x04
 ERR_BAD_ADDR = 0x05
 ERR_TIMEOUT = 0x06
+ERR_BAD_K = 0x07
 
 ERR_NAMES = {
     ERR_CRC_FAIL: "CRC_FAIL",
@@ -63,6 +64,7 @@ ERR_NAMES = {
     ERR_BUSY: "BUSY",
     ERR_BAD_ADDR: "BAD_ADDR",
     ERR_TIMEOUT: "TIMEOUT",
+    ERR_BAD_K: "BAD_K",
 }
 
 # START_COMPUTE mode payload byte values
@@ -76,6 +78,11 @@ DTYPE_INT8_INT32 = 0x00
 ARRAY_ROWS = 6
 ARRAY_COLS = 6
 MATRIX_ELEMENTS = ARRAY_ROWS * ARRAY_COLS
+
+# Max contraction (K) length for a single native OS (output-stationary)
+# compute call -- see rtl/common/pkg_types.vhd's OS_K_MAX. WS mode ignores
+# this entirely (always behaves as K=ARRAY_ROWS).
+OS_K_MAX = 16
 
 WEIGHT_BASE = 0x0000
 ACT_BASE = 0x4000
@@ -143,6 +150,12 @@ def matrix_to_bytes(matrix) -> bytes:
                 raise ValueError(f"value {iv} out of int8 range")
             out.append(iv & 0xFF)
     return bytes(out)
+
+
+def encode_start_compute_payload(mode: int, k: int) -> bytes:
+    """START_COMPUTE payload: MODE(1B) K(2B,LE). WS ignores k on-device
+    (always behaves as K=ARRAY_ROWS); OS accepts 1..OS_K_MAX."""
+    return bytes([mode]) + k.to_bytes(2, "little")
 
 
 def bytes_to_int32_matrix(data: bytes, rows: int = ARRAY_ROWS, cols: int = ARRAY_COLS):

@@ -105,6 +105,41 @@ values -- same wires, different meaning depending on `mode` (see
   `ROWS-1` shift edges reads out all 6 rows, bottom-to-top, in exactly
   `ARRAY_ROWS` cycles, all 6 columns in parallel.
 
+#### Native runtime K
+
+M and N (output rows/cols) are always the array's physical size (6), but
+the contraction dimension K is purely time-streamed in OS mode -- the
+`i+j+t` skew above already has no dependency on the array's own size for
+`t`'s range. This makes K a genuine **runtime** parameter (1..`OS_K_MAX`,
+16 -- see `rtl/common/pkg_types.vhd`) for a single OS `START_COMPUTE`
+call, generalizing the feed-cycle count to `OS_FEED_CYCLES(K) =
+ARRAY_ROWS+ARRAY_COLS+K` (re-derives the original hardcoded
+`2*ARRAY_ROWS+ARRAY_COLS` exactly when `K=ARRAY_ROWS`, including its
+1-cycle margin). `rtl/feeder/skew_feeder.vhd` gets a second,
+`OS_K_MAX`-sized register file for OS-mode activation staging (the WS
+36-entry one is untouched); `rtl/array/array_ctrl.vhd`'s STAGE_A needs a
+small nested (m,k) address-counter pair to translate between the dense
+scratchpad source layout and that fixed-stride storage. See
+`sim/tb_systolic_array.vhd` (K-sweep at the array level, zero DUT
+changes -- proves the timing formula alone), `sim/tb_os_feeders.vhd`
+(staging with `array_ctrl` bypassed) and `sim/tb_core_integration.vhd`
+(the real `array_ctrl` counters, plus a per-cycle invariant assertion)
+for how this was verified before ever touching hardware.
+
+**WS mode's K stays fixed at `ARRAY_ROWS` (6), unchanged.** K there is
+physically bound to the array's row count (stationary weight storage per
+PE) -- supporting K>6 in one WS call would need chaining multiple
+internal load+compute passes with a psum accumulator fed back in, a
+materially larger redesign that wasn't undertaken here.
+
+**Resource cost, confirmed empirically, not assumed**: each OS-mode
+activation-feed lane's combinational select mux grows from a 6:1 to an
+`OS_K_MAX`:1 mux, which dominates LUT cost more than the extra registers
+do. `OS_K_MAX=32` synthesized to 87%/89% logic/CLS utilization on the
+Tang Nano 20K -- technically fit, but too tight for comfort, so
+`OS_K_MAX` was dialed back to 16 (78%/83%) instead of shipping at that
+margin.
+
 ### Array controller FSM
 
 ```mermaid

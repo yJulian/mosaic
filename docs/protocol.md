@@ -40,7 +40,7 @@ Both host->device and device->host frames use the same shape:
 |---|---|---|---|
 | 0x01 | `WRITE_WEIGHTS` | `OFFSET(2B,LE) DATA(N bytes)` | writes into the weight scratchpad region at `OFFSET`; `N = LEN-2` |
 | 0x02 | `WRITE_ACTIVATIONS` | `OFFSET(2B,LE) DATA(N bytes)` | writes into the activation scratchpad region |
-| 0x03 | `START_COMPUTE` | `MODE(1B)`: 0=WS, 1=OS | rejected (NACK BUSY) if not idle |
+| 0x03 | `START_COMPUTE` | `MODE(1B) K(2B,LE)`: 0=WS/1=OS, K=contraction length | rejected (NACK BUSY) if not idle; NACK BAD_K if K=0 or K>OS_K_MAX |
 | 0x04 | `READ_RESULT` | `OFFSET(2B,LE) LEN(1B)` | request; device replies with `RESULT_DATA` |
 | 0x05 | `STATUS_QUERY` | (none) | device replies with `STATUS_DATA` |
 | 0x06 | `DEBUG_READ_PE` | `ROW(1B) COL(1B)` | reads raw PE registers; allowed even while busy |
@@ -74,13 +74,29 @@ are always accepted (pure read-only / soft-control operations).
 | 0x04 | `ERR_BUSY` |
 | 0x05 | `ERR_BAD_ADDR` (defined, not yet actively checked in v1) |
 | 0x06 | `ERR_TIMEOUT` (defined, not yet actively checked in v1) |
+| 0x07 | `ERR_BAD_K` |
 
 ## Data format
 
-int8 x int8 -> int32, no saturation. Matrices are 6x6, row-major.
-`WRITE_WEIGHTS`/`WRITE_ACTIVATIONS` payloads are 36 raw int8 bytes
-(two's complement). `RESULT_DATA` payloads are 36 int32 values,
-4 bytes each, little-endian, two's complement.
+int8 x int8 -> int32, no saturation. Output rows/cols (M, N) are always
+fixed at 6 (the array's physical size), row-major. `RESULT_DATA` payloads
+are always 36 int32 values, 4 bytes each, little-endian, two's complement
+-- unaffected by K, since M and N never change.
+
+`WRITE_WEIGHTS`/`WRITE_ACTIVATIONS` payload sizes depend on K:
+- **WS mode**: K is always 6 (physically fixed -- see
+  `docs/architecture.md`). Payloads are 36 raw int8 bytes, row-major.
+- **OS mode**: K is the `START_COMPUTE` request's own field, 1..`OS_K_MAX`
+  (16 -- see `rtl/common/pkg_types.vhd`). `WRITE_ACTIVATIONS` payload is
+  `6*K` bytes, row-major M-major/K-minor (activations are 6xK).
+  `WRITE_WEIGHTS` payload is `K*6` bytes, row-major K-major/N-minor
+  (weights are Kx6). Both dense, no padding -- K itself is exactly what's
+  sent, whatever `START_COMPUTE` will later declare for the same K.
+
+A single hardware compute call cannot mix different K values between the
+weight/activation writes and the `START_COMPUTE` that follows -- write
+both matrices at the K you intend to compute with, then send that same K
+in `START_COMPUTE`.
 
 ## Typical session
 

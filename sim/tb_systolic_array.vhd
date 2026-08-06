@@ -9,9 +9,13 @@ use work.pkg_types.all;
 --   1) LOAD_WEIGHT broadcast reaches every one of the 36 PEs correctly.
 --   2) COMPUTE_WS: activation fed with a per-row skew of ROW cycles produces
 --      C = A @ W at psum_south(c), each output emerging at cycle m+ROWS+c.
---   3) COMPUTE_OS: activation skewed by row, weight skewed by column,
---      accumulated locally, then DRAIN_OS reads out bottom-to-top over
---      6 cycles -- same golden result, cross-checking both dataflows.
+--   3) COMPUTE_OS, swept across several K (contraction dimension) values,
+--      including K=6 (exact regression against the original hardcoded
+--      test), K<6, K>6, K=1 and K=OS_K_MAX -- validates the generalized
+--      OS_FEED_CYCLES(k_len) timing formula and skew bounds in complete
+--      isolation from array_ctrl/feeder staging risk (see
+--      docs/architecture.md and rtl/array/array_ctrl.vhd for why OS mode
+--      can stream an arbitrary K while WS mode cannot).
 entity tb_systolic_array is
 end entity tb_systolic_array;
 
@@ -55,6 +59,52 @@ architecture sim of tb_systolic_array is
   end function;
 
   constant GOLDEN_C : matrix6_t := matmul(A_MAT, W_MAT);
+
+  -- Extended test data for the OS K-sweep: for k<ARRAY_ROWS these are
+  -- bit-identical to A_MAT/W_MAT above (so a k_len=ARRAY_ROWS sweep point
+  -- is a true regression against the original hardcoded test), extended
+  -- with deterministic small values (well within int8 range) for
+  -- k>=ARRAY_ROWS, up to OS_K_MAX. Plain integer-returning functions
+  -- instead of materialized 2D constants -- simpler than sizing an
+  -- unconstrained array type just for this.
+  function ext_a_val(m, k : integer) return integer is
+  begin
+    if k < ARRAY_ROWS then
+      return A_MAT(m, k);
+    else
+      return ((m * 5 + k * 3 + 7) mod 41) - 20;
+    end if;
+  end function;
+
+  function ext_w_val(k, n : integer) return integer is
+  begin
+    if k < ARRAY_ROWS then
+      return W_MAT(k, n);
+    else
+      return ((k * 7 + n * 2 + 11) mod 37) - 18;
+    end if;
+  end function;
+
+  -- Golden C = A @ W for a given contraction length k_len (<= OS_K_MAX).
+  -- matmul_k(ARRAY_ROWS) must equal GOLDEN_C above exactly.
+  function matmul_k(k_len : integer) return matrix6_t is
+    variable result : matrix6_t;
+    variable sum     : integer;
+  begin
+    for m in 0 to ARRAY_ROWS - 1 loop
+      for c in 0 to ARRAY_COLS - 1 loop
+        sum := 0;
+        for k in 0 to k_len - 1 loop
+          sum := sum + ext_a_val(m, k) * ext_w_val(k, c);
+        end loop;
+        result(m, c) := sum;
+      end loop;
+    end loop;
+    return result;
+  end function;
+
+  type k_sweep_t is array (natural range <>) of integer;
+  constant K_SWEEP : k_sweep_t(0 to 4) := (6, 3, 10, 1, OS_K_MAX);
 
   signal clk          : std_logic := '0';
   signal rst          : std_logic := '1';
@@ -121,6 +171,8 @@ begin
     end procedure;
 
     variable m : integer;
+    variable k_len    : integer;
+    variable golden_k : matrix6_t;
   begin
     rst <= '1'; mode <= PE_IDLE;
     wait until rising_edge(clk);
@@ -184,57 +236,72 @@ begin
     end loop;
 
     ------------------------------------------------------------------
-    -- Test 3: COMPUTE_OS. Row i (output row) skewed by i cycles for A,
-    -- column j (output col) skewed by j cycles for W. One dedicated
-    -- clear cycle first (its data is discarded by the PE's os_clear path).
+    -- Test 3: COMPUTE_OS, swept across several K values. Row i (output
+    -- row) skewed by i cycles for A, column j (output col) skewed by j
+    -- cycles for W -- same skew pattern as before, just bounded by k_len
+    -- instead of the hardcoded ARRAY_ROWS. One dedicated clear cycle first
+    -- (its data is discarded by the PE's os_clear path).
     ------------------------------------------------------------------
-    mode <= PE_COMPUTE_OS;
-    os_clear <= '1';
-    wait until rising_edge(clk);
-    os_clear <= '0';
+    for ki in K_SWEEP'range loop
+      k_len := K_SWEEP(ki);
+      golden_k := matmul_k(k_len);
 
-    for g in 0 to (ARRAY_ROWS - 1) + (ARRAY_COLS - 1) loop
-      for i in 0 to ARRAY_ROWS - 1 loop
-        if g - i >= 0 and g - i <= ARRAY_ROWS - 1 then
-          act_west(i) <= to_signed(A_MAT(i, g - i), DATA_WIDTH);
-        else
-          act_west(i) <= (others => '0');
-        end if;
+      mode <= PE_COMPUTE_OS;
+      os_clear <= '1';
+      wait until rising_edge(clk);
+      os_clear <= '0';
+
+      -- g_max = (k_len-1) + (ARRAY_ROWS-1): relies on ARRAY_ROWS=ARRAY_COLS
+      -- (a standing invariant everywhere else in this codebase too), since
+      -- act's and wgt's individual feed spans would otherwise need their
+      -- own maxes taken separately.
+      for g in 0 to (k_len - 1) + (ARRAY_ROWS - 1) loop
+        for i in 0 to ARRAY_ROWS - 1 loop
+          if g - i >= 0 and g - i <= k_len - 1 then
+            act_west(i) <= to_signed(ext_a_val(i, g - i), DATA_WIDTH);
+          else
+            act_west(i) <= (others => '0');
+          end if;
+        end loop;
+        for j in 0 to ARRAY_COLS - 1 loop
+          if g - j >= 0 and g - j <= k_len - 1 then
+            wgt_north(j) <= to_signed(ext_w_val(g - j, j), DATA_WIDTH);
+          else
+            wgt_north(j) <= (others => '0');
+          end if;
+        end loop;
+        wait until rising_edge(clk);
       end loop;
-      for j in 0 to ARRAY_COLS - 1 loop
-        if g - j >= 0 and g - j <= ARRAY_ROWS - 1 then
-          wgt_north(j) <= to_signed(W_MAT(g - j, j), DATA_WIDTH);
-        else
-          wgt_north(j) <= (others => '0');
-        end if;
+
+      -- Drain any remaining pipeline: margin idle cycles (mode still
+      -- COMPUTE_OS, inputs zero) before drain, same generous margin as
+      -- the original single-K test (more than the minimal ARRAY_COLS
+      -- needed, harmless either way).
+      act_west <= (others => (others => '0'));
+      wgt_north <= (others => (others => '0'));
+      for i in 0 to 2 * ARRAY_ROWS loop
+        wait until rising_edge(clk);
       end loop;
-      wait until rising_edge(clk);
-    end loop;
 
-    -- Drain any remaining pipeline: last product needed at PE(5,5) arrives
-    -- at g=(5-5)+... = ARRAY_ROWS-1+ARRAY_COLS-1 within the loop above; add
-    -- margin idle cycles (mode still COMPUTE_OS, inputs zero) before drain.
-    act_west <= (others => (others => '0'));
-    wgt_north <= (others => (others => '0'));
-    for i in 0 to 2 * ARRAY_ROWS loop
-      wait until rising_edge(clk);
-    end loop;
-
-    mode <= PE_DRAIN_OS;
-    psum_north <= (others => (others => '0'));
-    wait for 1 ns;
-    for c in 0 to ARRAY_COLS - 1 loop
-      check_acc(psum_south(c), GOLDEN_C(ARRAY_ROWS - 1, c),
-        "OS drain row " & integer'image(ARRAY_ROWS - 1) & " col " & integer'image(c));
-    end loop;
-
-    for r in ARRAY_ROWS - 2 downto 0 loop
-      wait until rising_edge(clk);
+      mode <= PE_DRAIN_OS;
+      psum_north <= (others => (others => '0'));
       wait for 1 ns;
       for c in 0 to ARRAY_COLS - 1 loop
-        check_acc(psum_south(c), GOLDEN_C(r, c),
-          "OS drain row " & integer'image(r) & " col " & integer'image(c));
+        check_acc(psum_south(c), golden_k(ARRAY_ROWS - 1, c),
+          "OS(k=" & integer'image(k_len) & ") drain row " & integer'image(ARRAY_ROWS - 1) & " col " & integer'image(c));
       end loop;
+
+      for r in ARRAY_ROWS - 2 downto 0 loop
+        wait until rising_edge(clk);
+        wait for 1 ns;
+        for c in 0 to ARRAY_COLS - 1 loop
+          check_acc(psum_south(c), golden_k(r, c),
+            "OS(k=" & integer'image(k_len) & ") drain row " & integer'image(r) & " col " & integer'image(c));
+        end loop;
+      end loop;
+
+      mode <= PE_IDLE;
+      wait until rising_edge(clk);
     end loop;
 
     ------------------------------------------------------------------

@@ -48,6 +48,7 @@ RTL_FILES=(
   "${REPO_ROOT}/rtl/uart/uart_tx.vhd"
   "${REPO_ROOT}/rtl/uart/sync_fifo.vhd"
   "${REPO_ROOT}/rtl/ctrl/cmd_processor.vhd"
+  "${REPO_ROOT}/rtl/common/pulse_stretch.vhd"
   "${REPO_ROOT}/rtl/top/clk_reset_gen.vhd"
   "${REPO_ROOT}/rtl/top/top.vhd"
 )

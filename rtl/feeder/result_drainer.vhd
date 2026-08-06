@@ -16,7 +16,7 @@ entity result_drainer is
     clk : in std_logic;
 
     mode        : in pe_mode_t;
-    phase_cycle : in natural range 0 to 31;
+    phase_cycle : in phase_cycle_t;
     psum_south  : in psum_vec_t;
 
     wb_idx  : in natural range 0 to RESULT_BYTES - 1;

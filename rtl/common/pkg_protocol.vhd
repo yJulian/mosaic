@@ -38,13 +38,17 @@ package pkg_protocol is
   constant ERR_BUSY      : std_logic_vector(7 downto 0) := x"04";
   constant ERR_BAD_ADDR  : std_logic_vector(7 downto 0) := x"05";
   constant ERR_TIMEOUT   : std_logic_vector(7 downto 0) := x"06";
+  constant ERR_BAD_K     : std_logic_vector(7 downto 0) := x"07";
 
   -- START_COMPUTE mode payload byte values
   constant MODE_WS : std_logic_vector(7 downto 0) := x"00";
   constant MODE_OS : std_logic_vector(7 downto 0) := x"01";
 
   -- PONG payload
-  constant FW_VERSION  : std_logic_vector(7 downto 0) := x"01";
+  -- v2: START_COMPUTE payload grew from MODE(1B) to MODE(1B) K(2B,LE) --
+  -- see docs/protocol.md. Host and firmware are always built/deployed
+  -- together in this project, so no cross-version compatibility shim.
+  constant FW_VERSION  : std_logic_vector(7 downto 0) := x"02";
   constant DTYPE_INT8_INT32 : std_logic_vector(7 downto 0) := x"00";
 
   -- STATUS_DATA bit positions
