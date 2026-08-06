@@ -35,3 +35,11 @@ flowchart TB
 Each region is far larger than v1's actual per-matrix payload (36B/36B/144B)
 deliberately, to leave room for a later extension that tiles larger
 matrices into repeated 6x6 blocks without needing a memory map redesign.
+
+**Tiling landed as a host-side-only feature** (`fpga-systolic tiled-run`,
+`python/fpga_systolic/tiling.py`): each 6x6 tile is loaded, computed, and
+read back before the next one is loaded, reusing offset 0 of each region
+exactly like v1 does -- the reserved headroom above was never actually
+needed and remains unused/available. Accumulation across tiles happens
+in the host driver, not on-device, since the array has no
+cross-invocation accumulator (see `docs/architecture.md`).
