@@ -1,9 +1,0 @@
-// Minimal CST for examples/blinky/blinky.vhd -- same clk/led0 pin
-// numbers as constraints/tangnano20k.cst (same confidence caveat
-// applies, see docs/bringup.md: verify against the official Tang
-// Nano 20K pinout before programming).
-IO_LOC "clk" 4;
-IO_PORT "clk" PULL_MODE=UP;
-
-IO_LOC "led_n" 10;
-IO_PORT "led_n" PULL_MODE=UP DRIVE=8;
