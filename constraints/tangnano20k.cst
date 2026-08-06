@@ -1,16 +1,13 @@
-// Tang Nano 20K (GW1NSR-LV18QN88PC6/I5, package QN88) pin constraints,
-// for use in Gowin EDA (this exact oss-cad-suite build cannot place&
-// route this device -- see docs/bringup.md).
+// Tang Nano 20K (GW2AR-LV18QN88C8/I7, package QFN88) pin constraints,
+// for the open-source yosys+nextpnr-himbaechel+apycula flow -- see
+// scripts/build.sh and docs/bringup.md.
 //
-// *** LOWER CONFIDENCE THAN THE FORMER TANG NANO 9K CST ***: these pin
-// numbers reflect commonly-referenced community Tang Nano 20K pinouts,
-// but were NOT cross-checked against the official Sipeed schematic in
-// this session the way the (now-removed) Tang Nano 9K CST was. Treat
-// every pin number here as a hypothesis to confirm against the
-// official Tang Nano 20K pinout table/schematic before the first
-// program attempt -- get this wrong and, at worst, LEDs don't light or
-// UART doesn't talk; the compute core itself doesn't depend on any of
-// this being right.
+// Pin numbers below are cross-checked against Sipeed's own official
+// example repo (github.com/sipeed/TangNano-20K-example: led/blink_leds,
+// uart/, picorv32/), not just community references. That check caught
+// a real bug in an earlier version of this file: uart_rx_pin/uart_tx_pin
+// were on 18/17 (which are actually two of the onboard LEDs) instead of
+// the real UART pins 70/69.
 
 IO_LOC "clk" 4;
 IO_PORT "clk" PULL_MODE=UP;
@@ -19,19 +16,19 @@ IO_LOC "rst_btn_n" 88;
 IO_PORT "rst_btn_n" PULL_MODE=UP;
 
 // uart_rx_pin = FPGA's receive pin = wired to the USB-UART bridge's TX.
-IO_LOC "uart_rx_pin" 18;
+IO_LOC "uart_rx_pin" 70;
 IO_PORT "uart_rx_pin" PULL_MODE=UP;
 
 // uart_tx_pin = FPGA's transmit pin = wired to the USB-UART bridge's RX.
-IO_LOC "uart_tx_pin" 17;
+IO_LOC "uart_tx_pin" 69;
 IO_PORT "uart_tx_pin" PULL_MODE=UP;
 
-IO_LOC "led_n[0]" 10;
-IO_LOC "led_n[1]" 11;
-IO_LOC "led_n[2]" 13;
-IO_LOC "led_n[3]" 14;
-IO_LOC "led_n[4]" 15;
-IO_LOC "led_n[5]" 16;
+IO_LOC "led_n[0]" 15;
+IO_LOC "led_n[1]" 16;
+IO_LOC "led_n[2]" 17;
+IO_LOC "led_n[3]" 18;
+IO_LOC "led_n[4]" 19;
+IO_LOC "led_n[5]" 20;
 IO_PORT "led_n[0]" PULL_MODE=UP DRIVE=8;
 IO_PORT "led_n[1]" PULL_MODE=UP DRIVE=8;
 IO_PORT "led_n[2]" PULL_MODE=UP DRIVE=8;

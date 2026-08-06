@@ -2,8 +2,8 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
--- Minimal bring-up smoke test: a heartbeat LED and nothing else. Run
--- this through Gowin EDA + program it BEFORE attempting the full
+-- Minimal bring-up smoke test: a heartbeat LED and nothing else. Build
+-- it with scripts/build.sh and program it BEFORE attempting the full
 -- top.vhd design (see docs/bringup.md) -- it isolates "is the clock
 -- pin, LED pin, and programming path right" from every other question
 -- the full design would otherwise raise at the same time.

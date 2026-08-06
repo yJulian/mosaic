@@ -180,14 +180,18 @@ next-state select mux for one register cost more than the two simpler
 registers saved) -- reverted.
 
 The project therefore targets the originally-intended **Tang Nano 20K**
-(GW1NSR-LV18QN88PC6/I5), which has a substantially larger fabric. This
-oss-cad-suite build has no chipdb for GW1NSR-18C in either
-nextpnr-himbaechel or apycula, so place&route and bitstream packing
-for that exact device aren't possible with this open-source toolchain
-right now -- `synth_gowin` itself is device-family-generic and still
-works for linting/resource estimates, but the final P&R+pack step
-needs Gowin's free, proprietary EDA tool. See `docs/bringup.md` for
-the exact hybrid-flow steps.
+(GW2AR-LV18QN88C8/I7, device family GW2A-18C), which has a substantially
+larger fabric (20,736 LUT4). An earlier session mis-identified this
+board's chip as GW1NSR-18C and, on finding no chipdb for *that* part in
+either `nextpnr-himbaechel` or `apycula`, concluded Gowin's proprietary
+EDA was required for place&route + bitstream packing. That was wrong on
+both counts: GW2AR-LV18QN88C8/I7 is the real part (cross-checked
+against Sipeed's own official example repo), and this oss-cad-suite
+build *does* ship a chipdb for `GW2A-18C`, which covers the GW2AR-18C
+variant's packages. `scripts/build.sh` runs the full open-source flow
+(`synth_gowin` -> `nextpnr-himbaechel` -> apycula `gowin_pack`)
+end-to-end -- confirmed empirically by placing & routing the complete
+design. No Gowin EDA needed. See `docs/bringup.md`.
 
 ## Memory map
 

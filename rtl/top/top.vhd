@@ -4,7 +4,7 @@ use ieee.numeric_std.all;
 use work.pkg_types.all;
 use work.pkg_memmap.all;
 
--- Top-level integration for the Tang Nano 9K. Wires together:
+-- Top-level integration for the Tang Nano 20K. Wires together:
 --   clk_reset_gen -> synchronous internal reset
 --   uart_rx/uart_tx + rx_fifo/tx_fifo -> byte-stream link to cmd_processor
 --   cmd_processor  -> protocol parsing/dispatch, host-facing control
@@ -26,7 +26,7 @@ entity top is
     uart_rx_pin : in std_logic;
     uart_tx_pin : out std_logic;
 
-    -- Status LEDs, active-low (Tang Nano 9K convention -- verify
+    -- Status LEDs, active-low (Tang Nano 20K convention -- verify
     -- against the real board during bring-up per docs/bringup.md).
     led_n : out std_logic_vector(5 downto 0)
   );

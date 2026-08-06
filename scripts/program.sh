@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Program the Tang Nano 20K via openFPGALoader. openFPGALoader itself
-# isn't chipdb-limited the way nextpnr/gowin_pack are, so it can flash a
-# bitstream (.fs) built by Gowin EDA just fine -- see docs/bringup.md.
+# Program the Tang Nano 20K via openFPGALoader, using a bitstream built
+# by scripts/build.sh -- see docs/bringup.md.
 #   scripts/program.sh <path-to.fs>            # load to SRAM (volatile, default)
 #   scripts/program.sh <path-to.fs> --flash    # write to flash (persistent)
 #   scripts/program.sh                         # defaults to build/top.fs
@@ -20,7 +19,7 @@ for arg in "$@"; do
 done
 
 if [ ! -f "${BITSTREAM}" ]; then
-  echo "no bitstream at ${BITSTREAM} -- build it in Gowin EDA first (see docs/bringup.md)" >&2
+  echo "no bitstream at ${BITSTREAM} -- run scripts/build.sh first (see docs/bringup.md)" >&2
   echo "or pass the path explicitly: scripts/program.sh /path/to/project.fs" >&2
   exit 1
 fi

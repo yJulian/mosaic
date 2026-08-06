@@ -7,11 +7,10 @@
 A 6x6 int8x8->int32 systolic array accelerator for the Sipeed Tang Nano
 20K, switchable between weight-stationary and output-stationary GEMM
 dataflows, controlled over a framed UART protocol from a Python host.
-Built end-to-end with the open-source `oss-cad-suite` toolchain
-(yosys + GHDL for VHDL, nextpnr-himbaechel, gowin_pack, openFPGALoader)
-for synthesis and simulation, with Gowin's free EDA tool bridging the
-one remaining gap (place&route for this specific device -- see
-[Status](#status) below).
+Built end-to-end with the open-source `oss-cad-suite` toolchain --
+yosys + GHDL for synthesis, `nextpnr-himbaechel` for place&route,
+apycula's `gowin_pack` for the bitstream, `openFPGALoader` to flash it.
+No proprietary tools involved (see [Status](#status) below).
 
 ```mermaid
 flowchart LR
@@ -47,18 +46,17 @@ dataflow explanation and an FSM/PE-interconnect diagram.)*
   cover every module up through a full-chip test (90 checks) driven
   purely over simulated UART, exactly as the real host driver talks to
   it. Run them all with `scripts/sim_all.sh` (or `make sim-all`).
-- **Hardware bring-up: not yet done.** This environment has neither a
-  Tang Nano 20K board nor Gowin EDA installed, so nothing past
-  simulation and synthesis-level linting has been run for real. See
-  [`docs/bringup.md`](docs/bringup.md) for the exact next steps and
-  what to double-check (pin assignments in particular) before the
-  first program attempt.
-- The project targets the Tang Nano 20K (GW1NSR-18C) rather than the
-  smaller Tang Nano 9K: the full design needs more LUTs/DSPs than the
-  9K has. See [`docs/architecture.md`](docs/architecture.md) for the
-  resource numbers and the toolchain gap (this build of `oss-cad-suite`
-  has no chipdb for GW1NSR-18C, so Gowin EDA is needed for the final
-  place&route + bitstream step).
+- **Bitstream build: confirmed working, no physical board yet.** The
+  full open-source flow (`scripts/build.sh`: synthesis -> place&route
+  -> bitstream packing) has been run end-to-end against the real
+  design and produces `build/top.fs`. This environment has no Tang
+  Nano 20K board attached, so nothing past that point (actually
+  flashing and running) has been done for real. See
+  [`docs/bringup.md`](docs/bringup.md) for the bring-up sequence.
+- The project targets the Tang Nano 20K (GW2AR-LV18QN88C8/I7) rather
+  than the smaller Tang Nano 9K: the full design needs more LUTs/DSPs
+  than the 9K has. See [`docs/architecture.md`](docs/architecture.md)
+  for the resource numbers.
 
 ## Repository layout
 
@@ -73,7 +71,7 @@ rtl/            VHDL sources
   ctrl/           CRC-8, UART protocol parser/dispatcher
   top/            top-level integration, reset synchronizer
 sim/            GHDL testbenches (+ a UART bus-functional-model package)
-constraints/    Gowin EDA pin constraints (.cst)
+constraints/    Pin constraints (.cst) for nextpnr-himbaechel/apycula
 examples/       minimal blinky bring-up smoke test
 scripts/        build.sh / sim.sh / sim_all.sh / program.sh
 python/         host driver + CLI (`fpga-systolic`)
@@ -89,10 +87,10 @@ scripts/sim_all.sh          # or: make sim-all
 scripts/sim.sh tb_top --wave   # single testbench + waveform dump
 ```
 
-### Synthesis lint / resource estimate (no chipdb needed for this part)
+### Build the bitstream
 
 ```bash
-scripts/build.sh
+scripts/build.sh          # synthesis -> place&route -> build/top.fs
 ```
 
 ### Host driver
@@ -106,10 +104,10 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/fpga-systolic run -p /dev/ttyUSB0 --mode ws --random --verify
 ```
 
-### Hardware (once you have a board + Gowin EDA -- see docs/bringup.md)
+### Hardware (once you have a board -- see docs/bringup.md)
 
 ```bash
-scripts/program.sh /path/to/gowin_eda_output.fs
+scripts/program.sh build/top.fs
 ```
 
 ## Documentation

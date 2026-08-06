@@ -13,17 +13,23 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${REPO_ROOT}/build"
 mkdir -p "${BUILD_DIR}"
 
-# Target: Tang Nano 20K (GW1NSR-LV18QN88PC6/I5). This oss-cad-suite
-# build has NO chipdb for GW1NSR-18C in either nextpnr-himbaechel or
-# apycula (confirmed empirically, see docs/architecture.md) -- so
-# place&route and bitstream packing for this exact device are NOT
-# possible with this open-source toolchain right now. synth_gowin
-# itself is device-family-generic (BSRAM/DSP inference doesn't need the
-# per-device chipdb), so scripts/build.sh still runs synthesis here for
-# linting/resource estimates, then stops and points to Gowin EDA
-# (proprietary, free) for the P&R+pack step -- see docs/bringup.md.
-DEVICE_FULL="GW1NSR-LV18QN88PC6/I5"
-BOARD="tangnano20k"       # accepted by openFPGALoader for programming a Gowin-EDA-built bitstream
+# Target: Tang Nano 20K (GW2AR-LV18QN88C8/I7, device family GW2A-18C).
+# Earlier revisions of this file targeted GW1NSR-LV18QN88PC6/I5, which
+# was simply the wrong chip for this board (confirmed against Sipeed's
+# own official example repo, github.com/sipeed/TangNano-20K-example,
+# whose .cst headers say "Part Number: GW2AR-LV18QN88C8/I7"). That
+# mistake was also why this project briefly believed Gowin's
+# proprietary EDA was required: nextpnr-himbaechel/apycula genuinely
+# have no chipdb for GW1NSR-18C, but this oss-cad-suite DOES ship a
+# chipdb for GW2A-18C (which covers the GW2AR-18C variant's packages
+# too) -- confirmed empirically by running P&R end-to-end. So the full
+# open-source flow (yosys+GHDL -> nextpnr-himbaechel -> apycula
+# gowin_pack -> openFPGALoader) works for this device; no Gowin EDA
+# needed. See docs/bringup.md.
+DEVICE_FULL="GW2AR-LV18QN88C8/I7"
+DEVICE_FAMILY="GW2A-18C"  # -o family=... value nextpnr-himbaechel needs for GW2AR parts
+BOARD="tangnano20k"       # accepted by openFPGALoader
+CST_FILE="${REPO_ROOT}/constraints/tangnano20k.cst"
 
 RTL_FILES=(
   "${REPO_ROOT}/rtl/common/pkg_types.vhd"

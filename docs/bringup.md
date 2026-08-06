@@ -2,60 +2,56 @@
 
 ## Status
 
-All RTL is fully verified in simulation (see "Verification" below) and
-via `scripts/build.sh`'s synthesis-only run (resource counts sane,
-36/40 MULT9X9, ~11-14K LUT-equivalent cells -- see `docs/architecture.md`
-for why that doesn't fit a Tang Nano 9K but should comfortably fit the
-Tang Nano 20K this project targets). **Nothing below this point has
-been run on real hardware or in Gowin EDA** -- this environment has
-neither a physical board nor the proprietary Gowin EDA tool installed.
-Treat every step here as a documented plan, not a confirmed procedure.
+All RTL is fully verified in simulation (see "Verification" below).
+The full open-source build flow -- `scripts/build.sh`, which runs
+`synth_gowin` (yosys+GHDL) -> `nextpnr-himbaechel` (place&route) ->
+apycula `gowin_pack` (bitstream) -- has been run end-to-end against the
+real design (resource counts sane: 36/40 MULT9X9, ~11,930 placed
+cells) and produces a `.fs` file. **Nothing below this point has been
+run on a physical board** -- this environment has no board attached.
+Treat the bring-up sequence in step 3 as a documented plan, not a
+confirmed procedure; everything up through bitstream generation *is*
+confirmed.
 
-## Why Gowin EDA is needed at all
+## Toolchain note: no Gowin EDA needed
 
-This oss-cad-suite build has no chipdb for GW1NSR-18C (Tang Nano 20K)
-in either `nextpnr-himbaechel` or `apycula` (confirmed empirically --
-see `docs/architecture.md`). `scripts/build.sh` still runs
-`synth_gowin` successfully (it's device-family-generic), which is
-useful for linting and resource estimates, but place&route and
-bitstream packing for this specific device need Gowin's own tool.
-`openFPGALoader` itself is **not** chipdb-limited, so it can still
-flash whatever `.fs` Gowin EDA produces.
+An earlier version of this project believed Gowin's proprietary EDA
+was required, because it checked chipdb availability for the wrong
+chip (GW1NSR-18C). The Tang Nano 20K actually uses **GW2AR-LV18QN88C8/I7**
+(device family `GW2A-18C`), confirmed against Sipeed's own official
+example repo (`github.com/sipeed/TangNano-20K-example`). This
+oss-cad-suite build ships a `GW2A-18C` chipdb in both
+`nextpnr-himbaechel` and `apycula`, which covers the GW2AR-18C
+variant's packages -- so the entire flow is open-source, no proprietary
+tool involved. See `docs/architecture.md` and `scripts/common.sh` for
+how this was verified.
 
-## Step 1: Gowin EDA project setup
+## Step 1: build the bitstream
 
-1. Install Gowin EDA (free registration required, Sipeed/Gowin's own
-   download). Not installed in this environment -- do this on your
-   own machine.
-2. Create a new FPGA project targeting **GW1NSR-LV18QN88PC6/I5**
-   (Tang Nano 20K).
-3. Add all files under `rtl/` to the project as VHDL sources (Gowin
-   EDA's synthesizer reads VHDL directly; no need to route through
-   yosys for this path). Set `top` (`rtl/top/top.vhd`) as the top-level
-   module.
-4. Add `constraints/tangnano20k.cst` as the project's physical
-   constraints file.
-5. Run Synthesize, then Place & Route, from Gowin EDA's own flow.
-   Check the resulting resource utilization report -- if it's still
-   over budget (unexpected, given the 9K-vs-20K capacity gap, but
-   worth confirming), see `docs/architecture.md`'s notes on what was
-   already tried (multiplier sharing) and what wasn't worth it
-   (register merging made things worse, not better).
-6. Generate the bitstream (`.fs` file).
+```bash
+scripts/build.sh          # -> build/top.fs
+```
+
+Runs synthesis, place&route, and bitstream packing in one go (see
+`scripts/build.sh` for the individual `yosys`/`nextpnr-himbaechel`/
+`gowin_pack` invocations if you need to run a step standalone, e.g. to
+inspect the post-P&R resource utilization report from
+`nextpnr-himbaechel`'s own log output).
 
 ## Step 2: pin constraints -- confirm before powering anything
 
-`constraints/tangnano20k.cst` is flagged internally as **lower
-confidence** than a typical verified pinout: it reflects commonly-
-referenced community Tang Nano 20K pin numbers, not something
-cross-checked against the official Sipeed schematic in this session
-(unlike the original Tang Nano 9K CST, which was superseded when the
-board target changed). Before the first program attempt, check every
-`IO_LOC` in that file against Sipeed's official Tang Nano 20K
-pinout/schematic, especially:
-- `clk` (must be the 27MHz onboard oscillator pin)
-- `uart_rx_pin`/`uart_tx_pin` direction (easy to swap by mistake --
-  wrong pin numbers here just mean "no bytes arrive," not damage)
+`constraints/tangnano20k.cst` is now cross-checked against Sipeed's
+official example repo (`led/blink_leds`, `uart/`, `picorv32/` under
+`github.com/sipeed/TangNano-20K-example`), not just community
+references -- this caught a real bug where `uart_rx_pin`/`uart_tx_pin`
+were assigned to pins 18/17 (two of the onboard LEDs) instead of the
+real UART pins 70/69. Current assignments:
+- `clk` = 4 (27MHz onboard oscillator)
+- `rst_btn_n` = 88
+- `uart_rx_pin` = 70, `uart_tx_pin` = 69
+- `led_n[0..5]` = 15, 16, 17, 18, 19, 20
+
+Still worth a final sanity check before the first program attempt:
 - `led_n` polarity (assumed active-low, matching other Tang Nano
   boards' convention; wrong polarity just means LEDs read inverted)
 
@@ -65,8 +61,8 @@ only for whether you can see status LEDs or talk over UART at all.
 ## Step 3: program
 
 ```bash
-scripts/program.sh /path/to/gowin_eda_output.fs         # SRAM, volatile
-scripts/program.sh /path/to/gowin_eda_output.fs --flash  # flash, persistent
+scripts/program.sh build/top.fs           # SRAM, volatile
+scripts/program.sh build/top.fs --flash   # flash, persistent
 ```
 
 ## Step 4: bring-up sequence
@@ -74,8 +70,8 @@ scripts/program.sh /path/to/gowin_eda_output.fs --flash  # flash, persistent
 Do these **in order** -- each one isolates a different layer, so a
 failure at step N with steps <N working narrows down the problem a lot.
 
-1. **Heartbeat LED**: after programming, `led_n[0]` (per the CST above,
-   pending pin confirmation) should blink at roughly 1.6Hz
+1. **Heartbeat LED**: after programming, `led_n[0]` (pin 15, per the
+   CST above) should blink at roughly 1.6Hz
    (`heartbeat_ctr(23)` toggling at 27MHz/2^24). This alone confirms
    the bitstream loaded, the clock is running, and the CST's clock pin
    is right -- independent of anything UART/compute related.
@@ -115,10 +111,10 @@ failure at step N with steps <N working narrows down the problem a lot.
   low-noise, wired link; upgrade to CRC-16 if bring-up shows real
   corruption (contained change, see `docs/protocol.md`).
 - `nextpnr-himbaechel`'s Gowin backend is explicitly marked
-  experimental upstream -- moot for the final device now (Gowin EDA
-  handles P&R for GW1NSR-18C), but relevant if this project ever adds
-  a secondary Tang Nano 9K/4K build target through the open-source
-  path.
+  experimental upstream. It's what this project's whole open-source
+  build flow relies on for P&R (see the toolchain note above) -- placement
+  succeeded on the full design in this session, but timing closure /
+  routing-corner behavior on real silicon hasn't been checked yet.
 
 ## Verification (what's already confirmed, without hardware)
 
