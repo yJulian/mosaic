@@ -5,6 +5,7 @@ Examples:
   fpga-systolic run -p /dev/ttyUSB0 --mode ws --random --verify
   fpga-systolic run -p /dev/ttyUSB0 --mode os --weights w.npy --activations a.npy
   fpga-systolic tiled-run -p /dev/ttyUSB0 --mode ws --random --m 12 --k 9 --n 6 --verify
+  fpga-systolic run-k -p /dev/ttyUSB0 --mode os --random --k 17 --verify
   fpga-systolic status -p /dev/ttyUSB0
   fpga-systolic debug-pe -p /dev/ttyUSB0 --row 2 --col 3
   fpga-systolic monitor -p /dev/ttyUSB0
@@ -221,6 +222,52 @@ def tiled_run(ctx: click.Context, mode: str, weights_path: str | None, activatio
                 return res
 
             result = tiling.tiled_matmul(compute_tile, a, w)
+
+    _print_matrix(a, "activations")
+    _print_matrix(w, "weights")
+    _print_matrix(result, "result")
+
+    if verify:
+        golden = matmul_int8(a, w)
+        if np.array_equal(result, golden):
+            click.echo(click.style("VERIFY OK: matches numpy", fg="green"))
+        else:
+            _print_matrix(golden, "expected (numpy)")
+            click.echo(click.style("VERIFY FAILED: mismatch", fg="red"))
+            sys.exit(1)
+
+
+@main.command("run-k")
+@click.option("--mode", type=click.Choice(MODE_CHOICES.keys()), required=True)
+@click.option("--weights", "weights_path", type=click.Path(exists=True), help=f"Kx{proto.ARRAY_COLS} int8 matrix (.npy or .csv)")
+@click.option("--activations", "activations_path", type=click.Path(exists=True), help=f"{proto.ARRAY_ROWS}xK int8 matrix (.npy or .csv)")
+@click.option("--random", "random_", is_flag=True, help="use random matrices instead of --weights/--activations")
+@click.option("--k", "k", type=click.IntRange(1, proto.OS_K_MAX), help="contraction dim (with --random)")
+@click.option("--verify", is_flag=True, help="compare against a numpy golden model")
+@click.option("--seed", type=int, default=None, help="RNG seed for --random")
+@click.pass_context
+def run_k(ctx: click.Context, mode: str, weights_path: str | None, activations_path: str | None,
+          random_: bool, k: int | None, verify: bool, seed: int | None) -> None:
+    """Multiply a fixed-6xK activations matrix by a Kx6 weights matrix in
+    ONE native hardware compute call (K up to proto.OS_K_MAX) -- unlike
+    tiled-run, no host-side tiling/summing happens at all. OS-only: WS's
+    K is physically fixed at 6 (see docs/architecture.md), so this raises
+    a clear error rather than a confusing hardware NACK if K != 6 there."""
+    if mode == "ws" and k is not None and k != proto.ARRAY_ROWS:
+        raise click.ClickException(f"WS mode only supports k={proto.ARRAY_ROWS} (K is physically fixed there)")
+
+    rng = np.random.default_rng(seed)
+    a = _load_tiled_matrix(activations_path, random_, rng, (proto.ARRAY_ROWS, k) if k else None)
+    w = _load_tiled_matrix(weights_path, random_, rng, (k, proto.ARRAY_COLS) if k else None)
+    if a.shape[0] != proto.ARRAY_ROWS or w.shape[1] != proto.ARRAY_COLS:
+        raise click.ClickException(
+            f"run-k needs {proto.ARRAY_ROWS}xK activations and Kx{proto.ARRAY_COLS} weights, got {a.shape} and {w.shape}"
+        )
+    if a.shape[1] != w.shape[0]:
+        raise click.ClickException(f"K mismatch: activations is {a.shape}, weights is {w.shape}")
+
+    with _driver(ctx) as d:
+        result = np.array(d.run(w, a, MODE_CHOICES[mode]), dtype=np.int64)
 
     _print_matrix(a, "activations")
     _print_matrix(w, "weights")

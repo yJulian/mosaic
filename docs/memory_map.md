@@ -43,3 +43,11 @@ exactly like v1 does -- the reserved headroom above was never actually
 needed and remains unused/available. Accumulation across tiles happens
 in the host driver, not on-device, since the array has no
 cross-invocation accumulator (see `docs/architecture.md`).
+
+**OS mode's native K generalization** (`fpga-systolic run-k`, see
+`docs/architecture.md`'s "Native runtime K") also reuses offset 0 of the
+weight/activation regions unchanged -- only the *payload size* written
+there grows with K (up to `6*OS_K_MAX`=96 B for activations,
+`OS_K_MAX*6`=96 B for weights at `OS_K_MAX=16`), still tiny against each
+16 KB region. The result region always stays 144 B regardless of K (M,N
+fixed at 6).

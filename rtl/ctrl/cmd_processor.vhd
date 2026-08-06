@@ -49,6 +49,12 @@ entity cmd_processor is
 
     start_compute_ws : out std_logic;
     start_compute_os : out std_logic;
+    -- START_COMPUTE's K field (OS mode's contraction length), range-
+    -- validated below before start_compute_os is ever pulsed -- see
+    -- rtl/array/array_ctrl.vhd for why it's safe for that entity to
+    -- convert this straight to a constrained natural at the moment it
+    -- latches. Ignored by WS (always behaves as K=ARRAY_ROWS).
+    k_len_raw        : out unsigned(15 downto 0);
     array_busy       : in std_logic;
     array_done       : in std_logic;
     soft_reset       : out std_logic;
@@ -91,6 +97,7 @@ architecture rtl of cmd_processor is
   signal req_offset   : unsigned(15 downto 0) := (others => '0');
   signal result_len   : natural range 0 to RESULT_BYTES := 0;
   signal mode_byte    : std_logic_vector(7 downto 0) := (others => '0');
+  signal k_lo, k_hi   : std_logic_vector(7 downto 0) := (others => '0');
   signal debug_row_b  : std_logic_vector(7 downto 0) := (others => '0');
   signal debug_col_b  : std_logic_vector(7 downto 0) := (others => '0');
   signal data_byte_cnt : unsigned(15 downto 0) := (others => '0'); -- counts DATA bytes only, for WRITE_*
@@ -272,6 +279,13 @@ begin
             req_len <= to_integer(unsigned(rx_rd_data));
             payload_idx <= 0;
             data_byte_cnt <= (others => '0');
+            -- Defined fallback (K=ARRAY_ROWS) for any START_COMPUTE frame
+            -- that doesn't carry K bytes (LEN<3) -- without this, k_lo/
+            -- k_hi would silently keep whatever a *previous* frame last
+            -- left them at, the same class of stale-register bug the CRC
+            -- state's own comment already warns about for resp_opcode.
+            k_lo <= x"06";
+            k_hi <= x"00";
             if unsigned(rx_rd_data) = 0 then
               state <= S_CRC_WAIT;
             else
@@ -306,9 +320,12 @@ begin
                     data_byte_cnt <= data_byte_cnt + 1;
                 end case;
               when OP_START_COMPUTE =>
-                if payload_idx = 0 then
-                  mode_byte <= rx_rd_data;
-                end if;
+                case payload_idx is
+                  when 0 => mode_byte <= rx_rd_data;
+                  when 1 => k_lo <= rx_rd_data;
+                  when 2 => k_hi <= rx_rd_data;
+                  when others => null;
+                end case;
               when OP_READ_RESULT =>
                 case payload_idx is
                   when 0 => offset_lo <= rx_rd_data;
@@ -375,12 +392,21 @@ begin
                   resp_opcode <= OP_ACK;
                   resp_len <= 0;
                 when OP_START_COMPUTE =>
-                  resp_opcode <= OP_ACK;
-                  resp_len <= 0;
-                  if mode_byte = MODE_WS then
-                    start_compute_ws <= '1';
+                  -- Validated regardless of mode (WS ignores k_len_raw
+                  -- once accepted, but catching a malformed K here is
+                  -- free and catches host bugs on WS calls too).
+                  if unsigned(k_hi & k_lo) = 0 or unsigned(k_hi & k_lo) > to_unsigned(OS_K_MAX, 16) then
+                    resp_opcode <= OP_NACK;
+                    nack_err <= ERR_BAD_K;
+                    resp_len <= 1;
                   else
-                    start_compute_os <= '1';
+                    resp_opcode <= OP_ACK;
+                    resp_len <= 0;
+                    if mode_byte = MODE_WS then
+                      start_compute_ws <= '1';
+                    else
+                      start_compute_os <= '1';
+                    end if;
                   end if;
                 when OP_READ_RESULT =>
                   resp_opcode <= OP_RESULT_DATA;
@@ -493,5 +519,7 @@ begin
 
   dbg_row <= to_integer(unsigned(debug_row_b)) mod ARRAY_ROWS;
   dbg_col <= to_integer(unsigned(debug_col_b)) mod ARRAY_COLS;
+
+  k_len_raw <= unsigned(k_hi & k_lo);
 
 end architecture rtl;

@@ -59,6 +59,11 @@ architecture rtl of top is
   signal array_busy, array_done             : std_logic;
   signal soft_reset                          : std_logic;
   signal array_rst                           : std_logic;
+  signal k_len_raw                           : unsigned(15 downto 0);
+
+  -- array_ctrl <-> ws_weight_loader / skew_feeder (OS-mode native K)
+  signal k_len_val      : natural range 1 to OS_K_MAX;
+  signal staging_for_ws : std_logic;
 
   -- cmd_processor <-> systolic_array (debug)
   signal dbg_row    : natural range 0 to ARRAY_ROWS - 1;
@@ -70,15 +75,15 @@ architecture rtl of top is
   signal mode         : pe_mode_t;
   signal os_clear     : std_logic;
   signal load_counter : natural range 0 to 2 * ARRAY_ROWS;
-  signal phase_cycle  : natural range 0 to 31;
+  signal phase_cycle  : phase_cycle_t;
 
   -- array_ctrl <-> scratchpad (stage/writeback side)
   signal stage_addr : unsigned(ADDR_WIDTH - 1 downto 0);
   signal stage_data  : std_logic_vector(7 downto 0);
   signal stage_w_wen : std_logic;
-  signal stage_w_idx : natural range 0 to WEIGHT_BYTES - 1;
+  signal stage_w_idx : natural range 0 to OS_K_MAX * ARRAY_COLS - 1;
   signal stage_a_wen : std_logic;
-  signal stage_a_idx : natural range 0 to ACT_BYTES - 1;
+  signal stage_a_idx : natural range 0 to ARRAY_ROWS * OS_K_MAX - 1;
   signal wb_addr      : unsigned(ADDR_WIDTH - 1 downto 0);
   signal wb_idx        : natural range 0 to RESULT_BYTES - 1;
   signal wb_wen         : std_logic;
@@ -204,6 +209,7 @@ begin
       host_w_addr => host_w_addr, host_w_data => host_w_data, host_w_en => host_w_en,
       host_r_addr => host_r_addr, host_r_data => host_r_data, host_r_en => host_r_en,
       start_compute_ws => start_compute_ws, start_compute_os => start_compute_os,
+      k_len_raw => k_len_raw,
       array_busy => array_busy, array_done => array_done, soft_reset => soft_reset,
       dbg_row => dbg_row, dbg_col => dbg_col, dbg_weight => dbg_weight, dbg_accum => dbg_accum
     );
@@ -217,6 +223,8 @@ begin
       start_compute_ws => start_compute_ws, start_compute_os => start_compute_os,
       busy => array_busy, done => array_done,
       mode => mode, os_clear => os_clear, load_counter => load_counter, phase_cycle => phase_cycle,
+      k_len_raw => k_len_raw, k_len => k_len_val, staging_for_ws => staging_for_ws,
+      dbg_phase_counter => open, dbg_os_m_ctr => open, dbg_os_k_ctr => open, dbg_staging_a_os => open,
       stage_addr => stage_addr, stage_data => stage_data,
       stage_w_wen => stage_w_wen, stage_w_idx => stage_w_idx,
       stage_a_wen => stage_a_wen, stage_a_idx => stage_a_idx,
@@ -237,7 +245,7 @@ begin
     port map (
       clk => clk,
       stage_wen => stage_w_wen, stage_idx => stage_w_idx, stage_data => stage_data,
-      mode => mode, phase_cycle => phase_cycle,
+      mode => mode, phase_cycle => phase_cycle, k_len => k_len_val,
       wgt_north => wgt_north
     );
 
@@ -245,7 +253,8 @@ begin
     port map (
       clk => clk,
       stage_wen => stage_a_wen, stage_idx => stage_a_idx, stage_data => stage_data,
-      mode => mode, phase_cycle => phase_cycle,
+      staging_for_ws => staging_for_ws,
+      mode => mode, phase_cycle => phase_cycle, k_len => k_len_val,
       act_west => act_west
     );
 

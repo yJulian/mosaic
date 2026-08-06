@@ -143,8 +143,17 @@ class SystolicArrayDriver:
         payload = offset.to_bytes(2, "little") + data
         self._expect_ack(proto.OP_WRITE_ACTIVATIONS, payload)
 
-    def start_compute(self, mode: int) -> None:
-        self._expect_ack(proto.OP_START_COMPUTE, bytes([mode]))
+    def start_compute(self, mode: int, k: int | None = None) -> None:
+        """k: OS-mode contraction length (1..proto.OS_K_MAX), defaults to
+        ARRAY_ROWS. WS ignores k on-device but must always send exactly
+        ARRAY_ROWS here -- it has no hardware support for anything else
+        (see docs/architecture.md)."""
+        if k is None:
+            k = proto.ARRAY_ROWS
+        if mode == proto.MODE_WS and k != proto.ARRAY_ROWS:
+            raise ValueError(f"WS mode only supports k={proto.ARRAY_ROWS}, got k={k}")
+        payload = proto.encode_start_compute_payload(mode, k)
+        self._expect_ack(proto.OP_START_COMPUTE, payload)
 
     def wait_until_done(self, poll_interval: float = 0.002, timeout: float = 5.0) -> None:
         deadline = time.monotonic() + timeout
@@ -172,9 +181,16 @@ class SystolicArrayDriver:
         return DebugData(row=payload[0], col=payload[1], weight=weight, accum=accum)
 
     def run(self, weights, activations, mode: int):
-        """Convenience: load both matrices, compute, wait, read back."""
+        """Convenience: load both matrices, compute, wait, read back. K
+        (activations' column count / weights' row count) is derived from
+        the matrices themselves -- see start_compute for what each mode
+        actually supports."""
+        a_rows, a_cols = len(activations), len(activations[0])
+        w_rows, w_cols = len(weights), len(weights[0])
+        if a_cols != w_rows:
+            raise ValueError(f"K mismatch: activations is {a_rows}x{a_cols}, weights is {w_rows}x{w_cols}")
         self.load_weights(weights)
         self.load_activations(activations)
-        self.start_compute(mode)
+        self.start_compute(mode, k=a_cols)
         self.wait_until_done()
         return self.read_result()

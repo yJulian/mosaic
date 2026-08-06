@@ -9,13 +9,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TESTBENCHES=(
   "tb_pe:1ms"
   "tb_systolic_array:1ms"
+  "tb_os_feeders:1ms"
   "tb_scratchpad:1ms"
   "tb_core_integration:1ms"
   "tb_crc8:1ms"
   "tb_uart_loopback:1ms"
   "tb_sync_fifo:1ms"
   "tb_cmd_processor:1ms"
-  "tb_top:2ms"
+  "tb_top:3ms"
 )
 
 FAILED=()

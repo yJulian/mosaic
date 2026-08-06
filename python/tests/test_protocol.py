@@ -77,3 +77,26 @@ def test_bytes_to_int32_matrix_round_trip():
     data = b"".join(struct.pack("<i", v) for row in values for v in row)
     decoded = proto.bytes_to_int32_matrix(data, rows=2, cols=2)
     assert decoded == values
+
+
+def test_encode_start_compute_payload_shape():
+    payload = proto.encode_start_compute_payload(proto.MODE_OS, 17)
+    assert len(payload) == 3
+    assert payload[0] == proto.MODE_OS
+    assert int.from_bytes(payload[1:3], "little") == 17
+
+
+def test_encode_start_compute_payload_k_little_endian():
+    # k=300 needs both bytes (300 = 0x012C); catches an accidental single-byte encoding
+    payload = proto.encode_start_compute_payload(proto.MODE_WS, 300)
+    assert payload[1:3] == (300).to_bytes(2, "little")
+
+
+def test_err_bad_k_registered():
+    assert proto.ERR_NAMES[proto.ERR_BAD_K] == "BAD_K"
+
+
+def test_os_k_max_matches_rtl():
+    # Mirrors rtl/common/pkg_types.vhd's OS_K_MAX -- if this drifts, the
+    # host would accept K values the hardware will NACK (or vice versa).
+    assert proto.OS_K_MAX == 16
