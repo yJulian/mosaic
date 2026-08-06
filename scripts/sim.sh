@@ -35,10 +35,21 @@ ghdl -a --std=08 --workdir="${BUILD_DIR}" "${RTL_FILES[@]}" "${SIM_BFM_FILES[@]}
 echo "== elaborating ${TB_NAME} =="
 ghdl -e --std=08 --workdir="${BUILD_DIR}" -o "${BUILD_DIR}/${TB_NAME}" "${TB_NAME}"
 
-echo "== running ${TB_NAME} (stop-time=${STOP_TIME}) =="
+RUN_ARGS=(--stop-time="${STOP_TIME}")
 if [ "${WAVE}" = "1" ]; then
-  "${BUILD_DIR}/${TB_NAME}" --wave="${BUILD_DIR}/${TB_NAME}.ghw" --stop-time="${STOP_TIME}"
-  echo "waveform: ${BUILD_DIR}/${TB_NAME}.ghw  (open with: gtkwave ${BUILD_DIR}/${TB_NAME}.ghw)"
+  RUN_ARGS+=(--wave="${BUILD_DIR}/${TB_NAME}.ghw")
+fi
+
+echo "== running ${TB_NAME} (stop-time=${STOP_TIME}) =="
+if [ -x "${BUILD_DIR}/${TB_NAME}" ]; then
+  "${BUILD_DIR}/${TB_NAME}" "${RUN_ARGS[@]}"
 else
-  "${BUILD_DIR}/${TB_NAME}" --stop-time="${STOP_TIME}"
+  # mcode (JIT) backend: `-e` doesn't produce a standalone binary --
+  # confirmed on this repo's Windows GHDL install -- so run via `-r`
+  # instead, which works for both mcode and real (llvm/gcc) backends.
+  ghdl -r --std=08 --workdir="${BUILD_DIR}" "${TB_NAME}" "${RUN_ARGS[@]}"
+fi
+
+if [ "${WAVE}" = "1" ]; then
+  echo "waveform: ${BUILD_DIR}/${TB_NAME}.ghw  (open with: gtkwave ${BUILD_DIR}/${TB_NAME}.ghw)"
 fi

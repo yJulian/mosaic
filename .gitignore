@@ -1,4 +1,5 @@
 build/
+gowin/proj/
 *.ghw
 *.vcd
 *.o

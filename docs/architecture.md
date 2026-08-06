@@ -148,20 +148,27 @@ bracketing phases:
 
 ## Toolchain
 
-Everything through simulation and synthesis-for-linting works with the
-installed oss-cad-suite (yosys+GHDL plugin, GHDL, nextpnr-himbaechel,
-gowin_pack, openFPGALoader). Two toolchain-specific facts, confirmed
-empirically in this environment, not assumed:
+Simulation uses GHDL directly (any install -- this repo's own dev
+environment uses a standalone one, not bundled with anything else).
+Synthesis/place&route/bitstream/programming go through Gowin's own EDA
+(`gw_sh` headless Tcl shell + `programmer_cli`, no GUI) -- see
+`docs/bringup.md` for why: the originally-planned fully open-source
+flow (yosys+GHDL -> `nextpnr-himbaechel` -> apycula `gowin_pack` ->
+`openFPGALoader`) reached bitstream successfully in an earlier session
+but never got running end-to-end in this repo's actual Linux dev
+environment, so Gowin's own free/Education-tier EDA is what's actually
+in use now. Two toolchain-specific facts, confirmed empirically, not
+assumed:
 
 - Signed `a(7 downto 0) * b(7 downto 0)` in VHDL synthesizes to a
-  `MULT9X9` Gowin DSP cell automatically via `synth_gowin` -- but only
-  if there is exactly **one** multiply expression per PE in the
-  source. The first PE design had two separate `act_in * X` multiply
-  expressions (one per compute-mode branch, functionally mutually
-  exclusive but textually distinct), and synth_gowin instantiated a
-  *separate* MULT9X9 for each -- 72 total against a 40-cell device
-  budget. Fixed by computing one shared `mult_result <= act_in * mult_b`
-  signal and using it in both branches (see `rtl/pe/pe.vhd`).
+  `MULT9X9` Gowin DSP cell automatically -- but only if there is
+  exactly **one** multiply expression per PE in the source. The first
+  PE design had two separate `act_in * X` multiply expressions (one
+  per compute-mode branch, functionally mutually exclusive but
+  textually distinct), and synthesis instantiated a *separate* MULT9X9
+  for each -- 72 total against a 40-cell device budget. Fixed by
+  computing one shared `mult_result <= act_in * mult_b` signal and
+  using it in both branches (see `rtl/pe/pe.vhd`).
 - A VHDL array read/written inside a single clocked process with a
   registered read infers Gowin `DPB`/BSRAM cells reliably (confirmed:
   `rtl/mem/bram_sdp.vhd`'s pattern maps a 39936-byte array to exactly
@@ -181,17 +188,13 @@ registers saved) -- reverted.
 
 The project therefore targets the originally-intended **Tang Nano 20K**
 (GW2AR-LV18QN88C8/I7, device family GW2A-18C), which has a substantially
-larger fabric (20,736 LUT4). An earlier session mis-identified this
-board's chip as GW1NSR-18C and, on finding no chipdb for *that* part in
-either `nextpnr-himbaechel` or `apycula`, concluded Gowin's proprietary
-EDA was required for place&route + bitstream packing. That was wrong on
-both counts: GW2AR-LV18QN88C8/I7 is the real part (cross-checked
-against Sipeed's own official example repo), and this oss-cad-suite
-build *does* ship a chipdb for `GW2A-18C`, which covers the GW2AR-18C
-variant's packages. `scripts/build.sh` runs the full open-source flow
-(`synth_gowin` -> `nextpnr-himbaechel` -> apycula `gowin_pack`)
-end-to-end -- confirmed empirically by placing & routing the complete
-design. No Gowin EDA needed. See `docs/bringup.md`.
+larger fabric (20,736 LUT4) than the 9K. An earlier session mis-identified
+this board's chip as GW1NSR-18C; GW2AR-LV18QN88C8/I7 is the real part
+(cross-checked against Sipeed's own official example repo).
+`scripts/build.sh` runs the current toolchain
+(Gowin `gw_sh` -> synthesis -> P&R -> bitstream) end-to-end -- confirmed
+empirically, and confirmed on real hardware, not just placement. See
+`docs/bringup.md` for the toolchain history and hardware bring-up trail.
 
 ## Memory map
 

@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
-# Shared config sourced by every script in this directory: environment
-# setup, device/family strings, and the RTL file list in the topological
-# order GHDL/yosys need (dependencies before dependents).
+# Shared config sourced by every script in this directory: device
+# identity and the RTL file list in the topological order GHDL needs
+# (dependencies before dependents). Synthesis/P&R/programming
+# (build.sh/program.sh) go through the Gowin toolchain -- see
+# scripts/common_gowin.sh -- this file only covers what simulation
+# (sim.sh/sim_all.sh) needs, which is just GHDL on PATH.
 set -euo pipefail
 
-if [ -z "${OSS_CAD_SUITE_SOURCED:-}" ]; then
+# oss-cad-suite bundles a GHDL build; source it only if present, so
+# simulation still works with any standalone GHDL install (this repo's
+# own Windows dev environment uses one, not oss-cad-suite -- see
+# docs/bringup.md for why oss-cad-suite's synthesis side didn't pan out
+# here even though it's not needed for simulation at all).
+if [ -z "${OSS_CAD_SUITE_SOURCED:-}" ] && [ -f /opt/oss-cad-suite/environment ]; then
   source /opt/oss-cad-suite/environment
   export OSS_CAD_SUITE_SOURCED=1
 fi
@@ -17,17 +25,9 @@ mkdir -p "${BUILD_DIR}"
 # Earlier revisions of this file targeted GW1NSR-LV18QN88PC6/I5, which
 # was simply the wrong chip for this board (confirmed against Sipeed's
 # own official example repo, github.com/sipeed/TangNano-20K-example,
-# whose .cst headers say "Part Number: GW2AR-LV18QN88C8/I7"). That
-# mistake was also why this project briefly believed Gowin's
-# proprietary EDA was required: nextpnr-himbaechel/apycula genuinely
-# have no chipdb for GW1NSR-18C, but this oss-cad-suite DOES ship a
-# chipdb for GW2A-18C (which covers the GW2AR-18C variant's packages
-# too) -- confirmed empirically by running P&R end-to-end. So the full
-# open-source flow (yosys+GHDL -> nextpnr-himbaechel -> apycula
-# gowin_pack -> openFPGALoader) works for this device; no Gowin EDA
-# needed. See docs/bringup.md.
+# whose .cst headers say "Part Number: GW2AR-LV18QN88C8/I7").
 DEVICE_FULL="GW2AR-LV18QN88C8/I7"
-DEVICE_FAMILY="GW2A-18C"  # -o family=... value nextpnr-himbaechel needs for GW2AR parts
+DEVICE_FAMILY="GW2A-18C"  # nextpnr-himbaechel's -o family=... value for GW2AR parts
 BOARD="tangnano20k"       # accepted by openFPGALoader
 CST_FILE="${REPO_ROOT}/constraints/tangnano20k.cst"
 

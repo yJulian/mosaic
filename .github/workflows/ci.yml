@@ -1,0 +1,45 @@
+name: CI
+
+# Only the parts of this project's testing that are hardware- and
+# license-free run here: the GHDL simulation suite and the host-only
+# Python protocol tests. Synthesis/place&route/bitstream/programming go
+# through Gowin's proprietary EDA against a real Tang Nano 20K (see
+# docs/bringup.md) and can't run in a generic CI runner.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  simulate:
+    name: GHDL simulation suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GHDL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ghdl
+
+      - name: Run full testbench suite
+        run: make sim-all
+
+  python-tests:
+    name: Python host driver tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install host package
+        working-directory: python
+        run: pip install -e ".[dev]"
+
+      - name: Run host-only protocol tests
+        working-directory: python
+        run: pytest tests/ -v

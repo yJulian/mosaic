@@ -20,8 +20,7 @@ entity top is
     BAUD_RATE   : natural := 1_500_000
   );
   port (
-    clk       : in std_logic;
-    rst_btn_n : in std_logic;
+    clk : in std_logic;
 
     uart_rx_pin : in std_logic;
     uart_tx_pin : out std_logic;
@@ -107,7 +106,7 @@ begin
   -- Reset
   ------------------------------------------------------------------
   reset_gen : entity work.clk_reset_gen
-    port map (clk => clk, rst_btn_n => rst_btn_n, rst => rst);
+    port map (clk => clk, rst => rst);
 
   array_rst <= rst or soft_reset;
 

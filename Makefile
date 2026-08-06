@@ -18,4 +18,4 @@ program-flash: build
 	scripts/program.sh --flash
 
 clean:
-	rm -rf build
+	rm -rf build gowin/proj gowin/proj_wire gowin/proj_echo

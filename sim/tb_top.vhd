@@ -61,7 +61,6 @@ architecture sim of tb_top is
   constant GOLDEN_C : matrix6_t := matmul(A_MAT, W_MAT);
 
   signal clk       : std_logic := '0';
-  signal rst_btn_n : std_logic := '0'; -- asserted (active-low) at start
   signal host_to_dev : std_logic := '1';
   signal dev_to_host  : std_logic;
 
@@ -72,7 +71,7 @@ begin
   dut : entity work.top
     generic map (CLK_FREQ_HZ => CLK_FREQ_HZ, BAUD_RATE => BAUD_RATE)
     port map (
-      clk => clk, rst_btn_n => rst_btn_n,
+      clk => clk,
       uart_rx_pin => host_to_dev, uart_tx_pin => dev_to_host,
       led_n => open
     );
@@ -177,10 +176,7 @@ begin
       end loop;
     end procedure;
   begin
-    rst_btn_n <= '0';
-    wait for 200 ns;
-    rst_btn_n <= '1';
-    wait for 200 ns;
+    wait for 400 ns; -- clear the internal power-on reset (clk_reset_gen)
 
     ------------------------------------------------------------------
     -- PING sanity check
