@@ -152,6 +152,19 @@ real UART pins 70/69. Current assignments:
 - `uart_rx_pin` = 70, `uart_tx_pin` = 69
 - `led_n[0..5]` = 15, 16, 17, 18, 19, 20
 
+`led_n`'s six bits are all debug outputs, not just the heartbeat -- see
+`rtl/top/top.vhd`'s "Status LEDs" section:
+- `led_n[0]`: ~1.6Hz heartbeat (alive check, not gated by `rst`)
+- `led_n[1]`: `array_busy`, raw (a WS/OS compute is only tens of cycles,
+  microseconds at 27MHz -- this blinks far too fast to see by eye; it's
+  there for a logic analyzer, not a human)
+- `led_n[2]`: `array_done`, latches until the next `start_compute_*`
+- `led_n[3..5]`: `array_busy`/host-write/host-read, each passed through
+  `rtl/common/pulse_stretch.vhd` (200ms minimum-on-time, retriggerable)
+  so a single compute or scratchpad access is actually visible: `[3]`
+  flashes on any compute, `[4]` on `WRITE_WEIGHTS`/`WRITE_ACTIVATIONS`,
+  `[5]` on `READ_RESULT` byte reads.
+
 (Pin 88, Sipeed's "KEY1"/chip `MODE0`, is intentionally unused -- see
 "UART bring-up" above for why the design no longer takes an external
 reset input at all.)

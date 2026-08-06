@@ -43,6 +43,9 @@ entity cmd_processor is
     host_w_en   : out std_logic;
     host_r_addr : out unsigned(ADDR_WIDTH - 1 downto 0);
     host_r_data : in std_logic_vector(7 downto 0);
+    -- Pulses for one cycle whenever a scratchpad read address is issued
+    -- for OP_READ_RESULT data (debug/LED use only, see top.vhd).
+    host_r_en   : out std_logic;
 
     start_compute_ws : out std_logic;
     start_compute_os : out std_logic;
@@ -187,6 +190,7 @@ begin
         rx_rd_en <= '0';
         tx_wr_en <= '0';
         host_w_en <= '0';
+        host_r_en <= '0';
         start_compute_ws <= '0';
         start_compute_os <= '0';
         soft_reset <= '0';
@@ -201,6 +205,7 @@ begin
         rx_rd_en <= '0';
         tx_wr_en <= '0';
         host_w_en <= '0';
+        host_r_en <= '0';
         start_compute_ws <= '0';
         start_compute_os <= '0';
         soft_reset <= '0';
@@ -427,6 +432,7 @@ begin
                 state <= S_RESP_CRC_SETTLE;
               elsif resp_opcode = OP_RESULT_DATA then
                 host_r_addr <= to_unsigned(RESULT_BASE, ADDR_WIDTH) + req_offset;
+                host_r_en <= '1';
                 state <= S_RESULT_ADDR_SETTLE;
               else
                 state <= S_RESP_PAYLOAD;
@@ -457,6 +463,7 @@ begin
                   -- byte: prefetch the next scratchpad byte.
                   host_r_addr <= to_unsigned(RESULT_BASE, ADDR_WIDTH) + req_offset +
                                   to_unsigned(resp_idx - 2, ADDR_WIDTH);
+                  host_r_en <= '1';
                   state <= S_RESULT_ADDR_SETTLE;
                 end if;
               end if;

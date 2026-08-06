@@ -52,6 +52,7 @@ architecture rtl of top is
   signal host_w_en   : std_logic;
   signal host_r_addr : unsigned(ADDR_WIDTH - 1 downto 0);
   signal host_r_data : std_logic_vector(7 downto 0);
+  signal host_r_en   : std_logic;
 
   -- cmd_processor <-> array_ctrl
   signal start_compute_ws, start_compute_os : std_logic;
@@ -100,6 +101,14 @@ architecture rtl of top is
 
   -- simple bring-up heartbeat
   signal heartbeat_ctr : unsigned(23 downto 0) := (others => '0');
+
+  -- debug LEDs: host_w_en/host_r_en/array_busy are all far too brief
+  -- (single cycles, or a handful of microseconds for a whole compute) to
+  -- see by eye at 27MHz, so each gets stretched to a fixed human-visible
+  -- pulse before driving an LED.
+  signal led_busy_stretched  : std_logic;
+  signal led_write_stretched : std_logic;
+  signal led_read_stretched  : std_logic;
 begin
 
   ------------------------------------------------------------------
@@ -193,7 +202,7 @@ begin
       rx_rd_en => rxf_rd_en, rx_rd_data => rxf_rd_data, rx_empty => rxf_empty,
       tx_wr_en => txf_wr_en, tx_wr_data => txf_wr_data, tx_full => txf_full,
       host_w_addr => host_w_addr, host_w_data => host_w_data, host_w_en => host_w_en,
-      host_r_addr => host_r_addr, host_r_data => host_r_data,
+      host_r_addr => host_r_addr, host_r_data => host_r_data, host_r_en => host_r_en,
       start_compute_ws => start_compute_ws, start_compute_os => start_compute_os,
       array_busy => array_busy, array_done => array_done, soft_reset => soft_reset,
       dbg_row => dbg_row, dbg_col => dbg_col, dbg_weight => dbg_weight, dbg_accum => dbg_accum
@@ -278,11 +287,22 @@ begin
     end if;
   end process;
 
+  busy_stretch : entity work.pulse_stretch
+    port map (clk => clk, rst => rst, trigger => array_busy, stretched => led_busy_stretched);
+
+  write_stretch : entity work.pulse_stretch
+    port map (clk => clk, rst => rst, trigger => host_w_en, stretched => led_write_stretched);
+
+  read_stretch : entity work.pulse_stretch
+    port map (clk => clk, rst => rst, trigger => host_r_en, stretched => led_read_stretched);
+
   led_n <= not (
     heartbeat_ctr(23) &   -- led0: ~1.6Hz heartbeat, proves the FPGA is alive
-    array_busy &          -- led1: compute in progress
-    array_done &          -- led2: result ready
-    "000"                 -- led3..5: reserved
+    array_busy &          -- led1: compute in progress (raw, unstretched)
+    array_done &          -- led2: result ready (latches until next start)
+    led_busy_stretched &  -- led3: systolic array in use (stretched for visibility)
+    led_write_stretched & -- led4: scratchpad write in progress (stretched)
+    led_read_stretched    -- led5: scratchpad read in progress (stretched)
   );
 
 end architecture rtl;
